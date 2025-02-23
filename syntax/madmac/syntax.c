@@ -1,5 +1,5 @@
 /* syntax.c  syntax module for vasm */
-/* (c) in 2015-2023 by Frank Wille */
+/* (c) in 2015-2024 by Frank Wille */
 
 #include "vasm.h"
 #include "error.h"
@@ -13,7 +13,7 @@
    be provided by the main module.
 */
 
-const char *syntax_copyright="vasm madmac syntax module 0.7 (c) 2015-2023 Frank Wille";
+const char *syntax_copyright="vasm madmac syntax module 0.7a (c) 2015-2024 Frank Wille";
 hashtable *dirhash;
 char commentchar = ';';
 int dotdirs;
@@ -154,7 +154,7 @@ static void handle_equ(char *s)
 
   sym = new_equate(labname,parse_expr_tmplab(&s));
   if (exp) {
-    if (is_local_label(labname))
+    if (is_local_symbol_name(labname))
       syntax_error(1);  /* cannot export local symbol */
     sym->flags |= EXPORT;
   }
@@ -180,6 +180,37 @@ static int do_cond(char **s)
   }
   free_expr(condexp);
   return val != 0;
+}
+
+
+static void ifdef(char *s,int b)
+{
+  char *name;
+  symbol *sym;
+  int result;
+
+  if (!(name = parse_symbol(&s))) {
+    syntax_error(10);  /* identifier expected */
+    return;
+  }
+  if (sym = find_symbol(name))
+    result = sym->type != IMPORT;
+  else
+    result = 0;
+  cond_if(result == b);
+  eol(s);
+}
+
+
+static void handle_ifdef(char *s)
+{
+  ifdef(s,1);
+}
+
+
+static void handle_ifndef(char *s)
+{
+  ifdef(s,0);
 }
 
 
@@ -517,6 +548,7 @@ static void handle_list(char *s)
 
 static void handle_nlist(char *s)
 {
+  del_last_listing();  /* hide directive in listing */
   set_listing(0);
   eol(s);
 }
@@ -572,13 +604,15 @@ static void handle_print(char *s)
       size_t len;
       char *txt;
 
-      skip_string(s,'\"',&len);
+      txt = skip_string(s,'\"',&len);
       if (len > 0) {
         txt = mymalloc(len+1);
         s = read_string(txt,s,'\"',8);
         txt[len] = '\0';
         add_or_save_atom(new_text_atom(txt));
       }
+      else
+        s = txt;  /* skip and ignore empty string */
     }
     else {
       int type = PEXP_HEX;
@@ -655,6 +689,8 @@ struct {
   "if",handle_if,
   "else",handle_else,
   "endif",handle_endif,
+  "ifdef",handle_ifdef,
+  "ifndef",handle_ifndef,
   "rept",handle_rept,
   "endr",handle_endr,
   "macro",handle_macro,
@@ -1049,7 +1085,7 @@ int expand_macro(source *src,char **line,char *d,int dlen)
 }
 
 
-int init_syntax()
+int init_syntax(void)
 {
   size_t i;
   hashdata data;
